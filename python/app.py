@@ -1,0 +1,70 @@
+import streamlit as st
+from snowflake.snowpark.context import get_active_session
+
+# ✅ Get active Snowflake session (no secrets, native)
+session = get_active_session()
+
+st.set_page_config(page_title="Conversational AI — Customer Service", layout="centered")
+
+st.title("🧠 Snowflake Cortex AI — Retail Customer Service Chatbot")
+st.caption("LLM-powered chatbot that understands orders, returns, and policies in your Snowflake table.")
+
+# Chat input UI
+user_query = st.chat_input("Ask me anything about your orders, returns, or products...")
+
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# Show chat history
+for chat in st.session_state.history:
+    with st.chat_message(chat["role"]):
+        st.markdown(chat["content"])
+
+# Handle user query
+if user_query:
+    st.session_state.history.append({"role": "user", "content": user_query})
+
+    with st.chat_message("user"):
+        st.markdown(user_query)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+
+            # Step 1️⃣: Read the relevant customer service data
+            query = """
+                SELECT *
+                FROM CUSTOMER_SERVICE.CUSTOMER_SERVICE_SCHEMA.CUSTOMER_SERVICE_TABLE
+                LIMIT 50
+            """
+            df = session.sql(query).to_pandas()
+
+            # Step 2️⃣: Create a prompt with context (table data + user query)
+            context = df.to_string(index=False)
+            prompt = f"""
+You are a Snowflake AI assistant that answers only with factual, concise information from the data below.
+
+Customer service data (orders, returns, policies):
+{context}
+
+User query:
+{user_query}
+
+Rules:
+1. Respond ONLY with the exact fact asked.
+2. Do NOT explain reasoning or add extra sentences.
+3. If a specific product, order_id, or policy detail is requested, give only that value.
+4. If information is not found, reply "No matching record found."
+Answer in a single short sentence.
+"""
+
+
+            # Step 3️⃣: Call Snowflake Cortex AI model (no secrets, inside Snowflake)
+            response = session.sql(f"""
+                SELECT SNOWFLAKE.CORTEX.COMPLETE(
+                    'mistral-large',
+                    $${prompt}$$
+                ) AS ANSWER
+            """).collect()[0]["ANSWER"]
+
+            st.markdown(response)
+            st.session_state.history.append({"role": "assistant", "content": response})
