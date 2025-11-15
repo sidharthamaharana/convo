@@ -1,0 +1,4 @@
+snowflake-connector-python==3.1.7
+pytest==7.4.2
+sqlfluff==3.14.0
+flake8==6.1.0
