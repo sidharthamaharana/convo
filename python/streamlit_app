@@ -1,7 +1,7 @@
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 
-# ✅ Get active Snowflake session (no secrets, native)
+#  Get active Snowflake session (no secrets, native)
 session = get_active_session()
 
 st.set_page_config(page_title="Conversational AI — Customer Service", layout="centered")
