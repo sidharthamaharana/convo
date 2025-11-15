@@ -6,7 +6,7 @@ session = get_active_session()
 
 st.set_page_config(page_title="Conversational AI — Customer Service", layout="centered")
 
-st.title("🧠 Snowflake Cortex AI — Retail Customer Service Chatbot")
+st.title("Snowflake Cortex AI — Retail Customer Service Chatbot")
 st.caption("LLM-powered chatbot that understands orders, returns, and policies in your Snowflake table.")
 
 # Chat input UI
