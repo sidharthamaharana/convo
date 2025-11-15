@@ -1,0 +1,54 @@
+name: CD to Snowflake (branch-aware)
+
+on:
+  push:
+    branches: [ "dev", "test", "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'prod' || github.ref == 'refs/heads/test' && 'test' || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: python -m pip install -r requirements-ci.txt
+
+      - name: Determine branch & schema
+        id: map
+        run: |
+          BRANCH=${GITHUB_REF##*/}
+          echo "branch=$BRANCH"
+          echo "COMMIT=${GITHUB_SHA}" >> $GITHUB_ENV
+          if [ "$BRANCH" = "dev" ]; then echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_DEV }}" >> $GITHUB_ENV; fi
+          if [ "$BRANCH" = "test" ]; then echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_TEST }}" >> $GITHUB_ENV; fi
+          if [ "$BRANCH" = "main" ]; then echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_PROD }}" >> $GITHUB_ENV; fi
+          # fallback if specific schema not set
+          if [ -z "${SF_SCHEMA}" ]; then
+            echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA }}" >> $GITHUB_ENV
+          fi
+
+      - name: Run deploy script
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ env.SF_SCHEMA }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          echo "Deploying branch ${GITHUB_REF_NAME} -> schema ${SNOWFLAKE_SCHEMA}"
+          # For prod require a manual approval via GitHub environment protection (configure in repo settings)
+          python tools/deploy.py --commit-sha ${GITHUB_SHA}
