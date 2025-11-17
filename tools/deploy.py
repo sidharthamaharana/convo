@@ -55,23 +55,31 @@ def run_sql_files(conn, schema, sql_glob="sql/*.sql", dry=False):
         cur.execute(f"USE SCHEMA {schema}")
         sql_files = sorted(glob.glob(sql_glob))
         logging.info("Found %d SQL files", len(sql_files))
+
         for path in sql_files:
             logging.info("Running SQL file: %s", path)
             with open(path, "r", encoding="utf-8") as fh:
-                sql = fh.read()
-            if dry:
-                logging.info("[DRY RUN] Would execute SQL: %s...", path)
-                continue
-            try:
-                cur.execute(sql)
-                # attempt fetch to ensure statement completion if it returns rows
+                sql_text = fh.read()
+
+            # Split into statements safely
+            statements = [s.strip() for s in sql_text.split(";") if s.strip()]
+
+            for stmt in statements:
+                if dry:
+                    logging.info("[DRY RUN] Would execute: %s", stmt[:80])
+                    continue
+
                 try:
-                    cur.fetchall()
-                except Exception:
-                    pass
-            except Exception as e:
-                logging.exception("SQL failed in %s: %s", path, e)
-                raise
+                    logging.info("Executing statement: %s", stmt[:120])
+                    cur.execute(stmt)
+                    try:
+                        cur.fetchall()  # ignore if no rows
+                    except:
+                        pass
+                except Exception as e:
+                    logging.exception("SQL failed in %s: %s", path, e)
+                    raise
+
     finally:
         cur.close()
 
