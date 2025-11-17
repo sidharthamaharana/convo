@@ -4,4 +4,4 @@ CREATE TABLE IF NOT EXISTS MY_APP_TABLE (
     CREATED_AT TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-rename table MY_APP_TABLE to App_Table;
+alter table MY_APP_TABLE rename to App_Table;
