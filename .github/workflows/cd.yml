@@ -10,34 +10,61 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    # environments for approval (main=test=prod)
     environment: ${{ github.ref == 'refs/heads/main' && 'prod' || github.ref == 'refs/heads/test' && 'test' || 'dev' }}
 
     steps:
+
+      # -----------------------------
+      # 1. Checkout code
+      # -----------------------------
       - name: Checkout
         uses: actions/checkout@v3
 
+      # -----------------------------
+      # 2. Setup Python
+      # -----------------------------
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
+      # -----------------------------
+      # 3. Install Python dependencies
+      # -----------------------------
       - name: Install deps
         run: python -m pip install -r requirements-ci.txt
 
+      # -----------------------------
+      # 4. Correct Branch → Schema Mapping
+      # -----------------------------
       - name: Determine branch & schema
         id: map
         run: |
           BRANCH=${GITHUB_REF##*/}
-          echo "branch=$BRANCH"
+          echo "BRANCH=${BRANCH}"
+
           echo "COMMIT=${GITHUB_SHA}" >> $GITHUB_ENV
-          if [ "$BRANCH" = "dev" ]; then echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_DEV }}" >> $GITHUB_ENV; fi
-          if [ "$BRANCH" = "test" ]; then echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_TEST }}" >> $GITHUB_ENV; fi
-          if [ "$BRANCH" = "main" ]; then echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_PROD }}" >> $GITHUB_ENV; fi
-          # fallback if specific schema not set
-          if [ -z "${SF_SCHEMA}" ]; then
+
+          if [ "$BRANCH" = "dev" ]; then
+            echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_DEV }}" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "test" ]; then
+            echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_TEST }}" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "main" ]; then
+            echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA_PROD }}" >> $GITHUB_ENV
+          else
+            echo "Unknown branch → using fallback"
+          fi
+
+          # ---- FIXED FALLBACK (your version was broken) ----
+          if [ -z "$(grep SF_SCHEMA $GITHUB_ENV)" ]; then
             echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA }}" >> $GITHUB_ENV
           fi
 
+      # -----------------------------
+      # 5. Deploy to Snowflake
+      # -----------------------------
       - name: Run deploy script
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
@@ -45,10 +72,12 @@ jobs:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+
+          # the FIX — correct schema passed here
           SNOWFLAKE_SCHEMA: ${{ env.SF_SCHEMA }}
+
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
           echo "Deploying branch ${GITHUB_REF_NAME} -> schema ${SNOWFLAKE_SCHEMA}"
-          # For prod require a manual approval via GitHub environment protection (configure in repo settings)
           python tools/deploy.py --commit-sha ${GITHUB_SHA}
