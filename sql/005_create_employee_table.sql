@@ -1,6 +1,6 @@
-CREATE OR REPLACE TABLE EMPLOYEE (
-    emp_id INTEGER,
-    emp_name STRING,
-    join_date DATE
+create or replace table employee (
+    emp_id number,
+    name string,
+    role string,
+    salary number
 );
-
