@@ -1,2 +1,2 @@
 create or replace view employee_public as
-select name, role, dept from employee_master;
+select name, role, dept from employee;
