@@ -10,41 +10,29 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
-    # environments for approval (main=test=prod)
+    # Map branch to GitHub environment (environments configured in repo settings)
     environment: ${{ github.ref == 'refs/heads/main' && 'prod' || github.ref == 'refs/heads/test' && 'test' || 'dev' }}
 
     steps:
-
-      # -----------------------------
-      # 1. Checkout code
-      # -----------------------------
       - name: Checkout
         uses: actions/checkout@v3
 
-      # -----------------------------
-      # 2. Setup Python
-      # -----------------------------
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      # -----------------------------
-      # 3. Install Python dependencies
-      # -----------------------------
       - name: Install deps
         run: python -m pip install -r requirements-ci.txt
 
-      # -----------------------------
-      # 4. Correct Branch → Schema Mapping
-      # -----------------------------
       - name: Determine branch & schema
         id: map
         run: |
+          set -e
           BRANCH=${GITHUB_REF##*/}
           echo "BRANCH=${BRANCH}"
-
           echo "COMMIT=${GITHUB_SHA}" >> $GITHUB_ENV
 
           if [ "$BRANCH" = "dev" ]; then
@@ -57,14 +45,24 @@ jobs:
             echo "Unknown branch → using fallback"
           fi
 
-          # ---- FIXED FALLBACK (your version was broken) ----
-          if [ -z "$(grep SF_SCHEMA $GITHUB_ENV)" ]; then
+          # Fallback if schema not set
+          if ! grep -q "SF_SCHEMA" $GITHUB_ENV; then
             echo "SF_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA }}" >> $GITHUB_ENV
           fi
 
-      # -----------------------------
-      # 5. Deploy to Snowflake
-      # -----------------------------
+      - name: Preflight dry-run validation (safety)
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          # use the branch's schema as the target for preflight checks
+          SNOWFLAKE_SCHEMA: ${{ env.SF_SCHEMA }}
+        run: |
+          echo "Preflight dry-run against schema ${SNOWFLAKE_SCHEMA}"
+          python tools/deploy.py --dry-run --commit-sha ${GITHUB_SHA}
+
       - name: Run deploy script
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
@@ -72,10 +70,7 @@ jobs:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
-
-          # the FIX — correct schema passed here
           SNOWFLAKE_SCHEMA: ${{ env.SF_SCHEMA }}
-
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
