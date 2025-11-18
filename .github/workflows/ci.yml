@@ -1,23 +1,25 @@
 name: CI checks (lint + tests)
- 
+
 on:
   pull_request:
     branches: [ "dev", "test", "main" ]
   push:
     branches: [ "dev", "test", "main" ]
- 
+
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
       - name: Checkout
         uses: actions/checkout@v3
- 
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
- 
+
       - name: Cache pip
         uses: actions/cache@v3
         with:
@@ -25,23 +27,35 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements-ci.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
- 
+
       - name: Install CI deps
         run: python -m pip install -r requirements-ci.txt
- 
+
       - name: Lint SQL (sqlfluff)
-        run: sqlfluff lint sql/ || true   # make strict if desired
- 
-      - name: Lint Python
-        run: flake8 . || true
- 
-      - name: Run unit tests
+        run: sqlfluff lint sql/
+
+      - name: Lint Python (flake8)
+        run: flake8 .
+
+      - name: Run unit tests (pytest)
         env:
-          # optional: tests that hit a test Snowflake can use test secrets
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_TEST || secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER_TEST || secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD_TEST || secrets.SNOWFLAKE_PASSWORD }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE_TEST || secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA_TEST || secrets.SNOWFLAKE_SCHEMA }}
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE_TEST || secrets.SNOWFLAKE_WAREHOUSE }}
-        run: pytest -q || true   # make strict if desired
+        run: pytest -q
+
+      - name: Dry-run deploy (validate SQL & dependencies)
+        # This runs deploy.py in dry-run mode against TEST (or fallback) using test secrets
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_TEST || secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER_TEST || secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD_TEST || secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE_TEST || secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE_TEST || secrets.SNOWFLAKE_WAREHOUSE }}
+          # choose test schema to run dry-run validations (must be writable by test user)
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA_TEST || secrets.SNOWFLAKE_SCHEMA }}
+        run: |
+          python tools/deploy.py --dry-run --commit-sha "${{ github.sha }}"
