@@ -1,1 +1,1 @@
-alter table MY_APP_TABLE to APP_TABLE;
+alter table MY_APP_TABLE rename to APP_TABLE;
